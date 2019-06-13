@@ -1,18 +1,17 @@
 import matplotlib.pyplot as plt
 import time
-from simulator import ParticleWaterSimulator
+from simulator import ParticleWaterSimulatorEasy
 import tools
 
-
-particles_num = 100
-timestep = 0.001
+particles_num = 20
+timestep = 0.01
 gravity = 9.8
 space_left_down_corner = (0.0, 0.0)
 space_right_up_corner = (10.0, 10.0)
 collision_test = True
 
 # simulator init
-sim = ParticleWaterSimulator(
+sim = ParticleWaterSimulatorEasy(
     particle_nums_ = particles_num,
     timestep_= timestep,
     space_left_down_corner_= space_left_down_corner,
@@ -27,11 +26,6 @@ while True:
     # do timestep
     points = sim.dotimestep()
 
-
-    if int(sim.get_cur_time() * 100) % 10 !=0:
-        continue
-
-
     # paint points
     plt.scatter(points[0], points[1], s = 5)
 
@@ -44,7 +38,7 @@ while True:
     tools.paint_wall_by_2_corners(space_left_down_corner, space_right_up_corner)
 
     # title
-    plt.title("FPS: %d, particle_num: %d, cur_time = %.2f" % (int(1.0/(time.time() - t1)), particles_num, sim.get_cur_time()))
+    plt.title("FPS: %d, particle_num: %d, cur_time = %.2f" % (int(1.0/(time.time() - t1 + 1e-6)), particles_num, sim.get_cur_time()))
     # print('[log][display] simulator cost %.3f s, display cost %.3f s' % ((t2 - t1), (t_last - t2)))
     saveid += 1
 
