@@ -1,1 +1,4 @@
 .idea
+/imgs
+/log
+__pycache__/

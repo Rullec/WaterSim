@@ -26,8 +26,8 @@ class ParticleWaterSimulatorBase2D:
     collision_detect = False
 
     # collision penalty force coeff
-    collision_epsilon = 0.5
-    collision_penalty_k = 1e4  # control the distance
+    collision_epsilon = -1
+    collision_penalty_k = 3e3  # control the distance
     collision_penalty_b = 1  # control the velocity
 
     # damping coeff
@@ -91,7 +91,7 @@ class ParticleWaterSimulatorBase2D:
         self.g = gravity_
         self.timestep = timestep_
         self.collision_detect = collision_detect_
-        # self.collision_epsilon = min(space_height, space_length) / 100
+        self.collision_epsilon = min(space_height, space_length) / 100
 
 
 
@@ -148,10 +148,10 @@ class ParticleWaterSimulatorBase2D:
         # print('[log][simulation] do collision test')
         st = time.time()
         collision_force = np.zeros([2, self.particles_num])
-        x_left = 0.0
-        x_right = 10.0
-        y_down = 0.0
-        y_up = 10.0
+        x_left = self.space_left_down_corner[0]
+        x_right = self.space_right_up_corner[0]
+        y_down = self.space_left_down_corner[1]
+        y_up = self.space_right_up_corner[1]
 
         for i in range(self.particles_num):
             # for a point i

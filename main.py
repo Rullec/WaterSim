@@ -9,7 +9,7 @@ import shutil
 save_dir = "./imgs/"
 # simulator config
 particles_num = 500
-timestep = 0.01
+timestep = 0.003
 gravity = 9.8
 space_left_down_corner = (0.0, 0.0)
 space_right_up_corner = (100.0, 100.0)
@@ -27,9 +27,11 @@ if os.path.exists(save_dir):
     shutil.rmtree(save_dir)
 os.mkdir(save_dir)
 
+# 这里需要和下面保持一致
+space = (space_right_up_corner[0] - space_left_down_corner[0]) * (space_right_up_corner[1] - space_left_down_corner[1]) / 4
+d = max((( space / particles_num) / 3.14)**0.5, 1)
 
-# d = max(((25.0 / 500) / 3.14)**0.5, 1)
-d = 1
+# d = 1
 sim = ParticleWaterSimulatorSPH(
     particle_nums_ = particles_num,
     timestep_= timestep,
