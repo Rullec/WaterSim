@@ -1,10 +1,9 @@
-import numpy as np
 import time
 import logging
 import numpy as np
 import multiprocessing
 from multiprocessing import Pool
-
+import sys
 
 '''
     Class ParticleWaterSimulator
@@ -83,8 +82,9 @@ class ParticleWaterSimulatorBase2D:
     record_filename = None
 
     # SP or MP, it will decide by the simulator automatically
-    MultipleProcessing = -1
-    MultipleProcessingNum = -1
+    MULTIPLEPROCESS = -1
+    multipleprocess_num = -1
+    multipleprocess_infolist = []
 
     def __init__(self,
                  particle_nums_,
@@ -93,7 +93,8 @@ class ParticleWaterSimulatorBase2D:
                  space_right_up_corner_,
                  gravity_,
                  collision_detect_,
-                 record_save_dir_):
+                 record_save_dir_,
+                 multi_processor_):
         '''
 
         :param particle_nums_:
@@ -111,9 +112,10 @@ class ParticleWaterSimulatorBase2D:
         logger.info('[SimulatorBase] Init begin')
 
         # system property
-        x_num = int(particle_nums_ ** 0.5)
-        y_num = int(particle_nums_ ** 0.5)
-        self.particles_num = x_num * y_num
+        # x_num = int(particle_nums_ ** 0.5)
+        # y_num = int(particle_nums_ ** 0.5)
+        # self.particles_num = x_num * y_num
+        self.particles_num = particle_nums_
         self.point_pos = np.zeros([2, self.particles_num])
         self.point_vel = np.zeros([2, self.particles_num])
         self.point_acc = np.zeros([2, self.particles_num])
@@ -150,9 +152,9 @@ class ParticleWaterSimulatorBase2D:
         self.emit_amount = 1
 
         # MP computation setting
-        if self.particles_num > 1300:
-            self.MultipleProcessing = True
-            self.MultipleProcessingNum = multiprocessing.cpu_count()
+        # if self.particles_num > 1300:
+        self.MULTIPLEPROCESS = multi_processor_
+        self.multipleprocess_num = max(int((self.particles_num / 5000) * multiprocessing.cpu_count()), 4)
 
         # print('particle_num = %d' % self.particles_num)
         # print('timestep = %d' % self.timestep)
@@ -257,6 +259,33 @@ class ParticleWaterSimulatorBase2D:
 
         return points_gravity
 
+    def update_multipleprocessor_infolist(self):
+        '''
+            compute the info list for multiple processor division
+        :return:
+        '''
+        # judge whether to use MP or not
+        # if self.particles_num > 1300:
+        #     self.MULTIPLEPROCESS = True
+        #     self.multipleprocess_num = multiprocessing.cpu_count()
+
+        # update the particle num division
+        self.multipleprocess_infolist = []
+        for i in range(self.multipleprocess_num):
+            if 0 == i:
+                st_id = 0
+                ed_id = int((i + 1) / self.multipleprocess_num * self.particles_num)
+            elif i == self.multipleprocess_num - 1:
+                st_id = ed_id
+                ed_id = self.particles_num
+            else:
+                st_id = ed_id
+                ed_id = int((i + 1) / self.multipleprocess_num * self.particles_num)
+            if st_id > ed_id:
+                st_id = ed_id
+            para = np.array([i, st_id, ed_id])
+            self.multipleprocess_infolist.append(para)
+
     def record_data(self):
         with open(self.record_filename, 'a') as f:
             f.write("%d %d " % (self.frameid, self.particles_num))
@@ -272,6 +301,8 @@ class ParticleWaterSimulatorBase2D:
         self.point_acc = np.concatenate((self.point_acc, acc), axis=1)
         self.point_mass = np.append(self.point_mass, mass)
 
+        # you must update the division info after add or diminish some vertex
+        self.update_multipleprocessor_infolist()
 
 class ParticleWaterSimulatorEasy(ParticleWaterSimulatorBase2D):
 
@@ -282,9 +313,9 @@ class ParticleWaterSimulatorEasy(ParticleWaterSimulatorBase2D):
     lennard_jones_n = 2
 
     def __init__(self, particle_nums_, timestep_, space_left_down_corner_, space_right_up_corner_, gravity_,
-                 collision_detect_, record_save_dir_):
+                 collision_detect_, record_save_dir_, multi_processor_):
         ParticleWaterSimulatorBase2D.__init__(self, particle_nums_, timestep_, space_left_down_corner_, space_right_up_corner_, gravity_,
-                 collision_detect_, record_save_dir_)
+                 collision_detect_, record_save_dir_, multi_processor_)
         return
 
     def dotimestep(self):
@@ -390,9 +421,9 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
     viscosity_coeff = 1e-3 # the viscosity of water is 1e-3
 
     def __init__(self, particle_nums_, timestep_, space_left_down_corner_, space_right_up_corner_, gravity_,
-                 collision_detect_, kernel_poly6_d_, record_save_dir_):
+                 collision_detect_, kernel_poly6_d_, record_save_dir_,multi_processor_):
         ParticleWaterSimulatorBase2D.__init__(self, particle_nums_, timestep_, space_left_down_corner_, space_right_up_corner_, gravity_,
-                 collision_detect_, record_save_dir_)
+                 collision_detect_, record_save_dir_,multi_processor_)
 
         # init sph variable
         self.kernel_poly6_d = kernel_poly6_d_
@@ -404,9 +435,11 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
     def dotimestep(self):
         st = time.time()
 
+        # update Multiple Processor usage info
+        self.update_multipleprocessor_infolist()
+
         # emit
-        if np.random.rand(1)[0] > 0.8:
-            self.emitter_inject()
+        self.emitter_inject()
 
         # compute force
         points_force = self.compute_force()
@@ -488,6 +521,44 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
                             time_compute_density, time_compute_density/time_total * 100, time_compute_point_pressure, time_compute_point_pressure/time_total * 100))
         return sum_force
 
+    def compute_sub_viscosity_force(self, para):
+        assert para.shape == (3,) # procnum, st_point_id, ed_point_id
+        procnum = para[0]
+        st_point_id = para[1]
+        st_point_id = para[1]
+        ed_point_id = para[2]
+        # print('st ed = %d %d' % (st_point_id, ed_point_id))
+        cur_particles_num = ed_point_id - st_point_id
+        viscosity_force = np.zeros([2, cur_particles_num])
+
+        # compute
+        # print("[sub pressure force] density = " + str(self.sph_point_density[-1]))
+        for i in range(cur_particles_num):
+            id = i + st_point_id
+            velocity_i = np.reshape(self.point_vel[:, id], (2, 1))
+            velocity_diff = self.point_vel - velocity_i  # 2*n
+            mass_div_density = self.point_mass / self.sph_point_density
+            assert mass_div_density.shape == (self.particles_num,)
+
+            velocity_diff_coef_vec = velocity_diff * mass_div_density  # 2 * n
+            velocity_diff_coef_vec = velocity_diff_coef_vec.flatten(order='F')
+            # velocity_diff_coef_vec = 2n * 1, flatten按列展开
+            # (2i， 2i+1)数据对就是第i个点的x y速度差 * 对应系数
+
+            assert velocity_diff_coef_vec.shape == (self.particles_num * 2,)
+
+            # compute the ∇^2_matrix
+            pos_i = np.reshape(self.point_pos[:, id], (2, 1))
+            pos_diff = pos_i - self.point_pos
+            ddW_dxy2 = self.W_poly6_2_order_jacob(pos_diff)
+
+            assert ddW_dxy2.shape == (2, 2 * self.particles_num)
+
+            # compute the result
+            viscosity_force[:, i] = self.viscosity_coeff * np.dot(ddW_dxy2, velocity_diff_coef_vec)
+        return (procnum, viscosity_force)
+
+
     def compute_viscosity_force(self):
         '''
             this function will compute the viscosity force for each point
@@ -506,33 +577,45 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
         '''
         viscosity_force = np.zeros([2, self.particles_num])
 
-        for i in range(self.particles_num):
-            # compute the velocity_diff_coef_vec
-            velocity_i = np.reshape(self.point_vel[:, i], (2,1))
-            velocity_diff = self.point_vel - velocity_i  # 2*n
-            mass_div_density = self.point_mass / self.sph_point_density
-            assert mass_div_density.shape == (self.particles_num, )
+        if self.MULTIPLEPROCESS == True:
+            pool = Pool(self.multipleprocess_num)
+            data = pool.map(self.compute_sub_viscosity_force, self.multipleprocess_infolist)
+            for i in range(len(data)):
+                procnum, force = data[i]
+                st_id = self.multipleprocess_infolist[procnum][1]
+                ed_id = self.multipleprocess_infolist[procnum][2]
+                assert force.shape == (2, ed_id - st_id)
+                viscosity_force[:, st_id: ed_id] = force
+            pool.close()
+            pool.join()
+        else:
+            for i in range(self.particles_num):
+                # compute the velocity_diff_coef_vec
+                velocity_i = np.reshape(self.point_vel[:, i], (2,1))
+                velocity_diff = self.point_vel - velocity_i  # 2*n
+                mass_div_density = self.point_mass / self.sph_point_density
+                assert mass_div_density.shape == (self.particles_num, )
 
-            velocity_diff_coef_vec = velocity_diff * mass_div_density   # 2 * n
-            velocity_diff_coef_vec = velocity_diff_coef_vec.flatten(order='F')
-                # velocity_diff_coef_vec = 2n * 1, flatten按列展开
-                # (2i， 2i+1)数据对就是第i个点的x y速度差 * 对应系数
+                velocity_diff_coef_vec = velocity_diff * mass_div_density   # 2 * n
+                velocity_diff_coef_vec = velocity_diff_coef_vec.flatten(order='F')
+                    # velocity_diff_coef_vec = 2n * 1, flatten按列展开
+                    # (2i， 2i+1)数据对就是第i个点的x y速度差 * 对应系数
 
-            assert velocity_diff_coef_vec.shape == (self.particles_num * 2, )
+                assert velocity_diff_coef_vec.shape == (self.particles_num * 2, )
 
-            # compute the ∇^2_matrix
-            pos_i = np.reshape(self.point_pos[:, i], (2,1))
-            pos_diff = pos_i - self.point_pos
-            ddW_dxy2 = self.W_poly6_2_order_jacob(pos_diff)
+                # compute the ∇^2_matrix
+                pos_i = np.reshape(self.point_pos[:, i], (2,1))
+                pos_diff = pos_i - self.point_pos
+                ddW_dxy2 = self.W_poly6_2_order_jacob(pos_diff)
 
-            assert ddW_dxy2.shape == (2, 2 * self.particles_num)
+                assert ddW_dxy2.shape == (2, 2 * self.particles_num)
 
-            # compute the result
-            viscosity_force[:, i] = self.viscosity_coeff * np.dot(ddW_dxy2 , velocity_diff_coef_vec)
+                # compute the result
+                viscosity_force[:, i] = self.viscosity_coeff * np.dot(ddW_dxy2 , velocity_diff_coef_vec)
 
-            # np.set_printoptions(linewidth=200, floatmode='fixed')
-            # print('ddW_dxy = ' + str(ddW_dxy2))
-            # print('coef = ' + str(velocity_diff_coef_vec))
+                # np.set_printoptions(linewidth=200, floatmode='fixed')
+                # print('ddW_dxy = ' + str(ddW_dxy2))
+                # print('coef = ' + str(velocity_diff_coef_vec))
         # print('viscosity force = ' + str(viscosity_force))
         return viscosity_force
 
@@ -540,16 +623,18 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
         assert para.shape == (3,) # procnum, st_point_id, ed_point_id
         procnum = para[0]
         st_point_id = para[1]
+        st_point_id = para[1]
         ed_point_id = para[2]
         # print('st ed = %d %d' % (st_point_id, ed_point_id))
         cur_particles_num = ed_point_id - st_point_id
         pressure_force = np.zeros([2, cur_particles_num])
 
         # compute
+        # print("[sub pressure force] density = " + str(self.sph_point_density[-1]))
         for i in range(cur_particles_num):
             id = i + st_point_id
-            coeff_vector = self.point_mass * (self.sph_point_pressure + self.sph_point_pressure[id]) / (
-                        2 * self.sph_point_density)
+            coeff_vector = self.point_mass * \
+                           (self.sph_point_pressure + self.sph_point_pressure[id]) / (2 * self.sph_point_density)
             assert coeff_vector.shape == (self.particles_num,)
 
             # compute the ∇W(|xi - xj|)
@@ -574,37 +659,21 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
                            = - np.dot(∇W(|xi - xj|)_{2*n}, coeff_vec_j_{n*1}) = (2, 1)
         '''
         pressure_force = np.zeros([2, self.particles_num])
-        pressure_force_back = None
-        if self.MultipleProcessing == True:
-            startTime = time.time()
-            testFL = []
-            ed_id = None
-            record_point_num = []
-            for i in range(self.MultipleProcessingNum):
-                if 0 == i:
-                    st_id = 0
-                    ed_id = int((i+1) / self.MultipleProcessingNum * self.particles_num)
-                elif i == self.MultipleProcessingNum - 1:
-                    st_id = ed_id + 1
-                    ed_id = self.particles_num
-                else:
-                    st_id = ed_id + 1
-                    ed_id = int((i+1) / self.MultipleProcessingNum * self.particles_num)
-                if st_id > ed_id:
-                    st_id = ed_id
-                record_point_num.append((ed_id - st_id, st_id, ed_id))
-                para = np.array([i, st_id, ed_id])
-                testFL.append(para)
+        if self.MULTIPLEPROCESS == True:
+            # startTime = time.time()
 
-            pool = Pool(self.MultipleProcessingNum)
-            data = pool.map(self.compute_sub_pressure_force, testFL)
-            for procnum, force in data:
-                assert force.shape == (2, record_point_num[procnum][0])
-                pressure_force[:, record_point_num[procnum][1] : record_point_num[procnum][2]] = force
+            pool = Pool(self.multipleprocess_num)
+            data = pool.map(self.compute_sub_pressure_force, self.multipleprocess_infolist)
+            for i in range(len(data)):
+                procnum, force = data[i]
+                st_id = self.multipleprocess_infolist[procnum][1]
+                ed_id = self.multipleprocess_infolist[procnum][2]
+                assert force.shape == (2, ed_id - st_id)
+                pressure_force[:, st_id : ed_id] = force
             pool.close()
             pool.join()
-            endTime = time.time()
-            pressure_force_back = pressure_force
+            # endTime = time.time()
+            # pressure_force_bak = pressure_force.copy()
             # print("MP time : %.3F" % (endTime - startTime))
         else:
             startTime = time.time()
@@ -631,8 +700,29 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
             # print("SP time : %.3F" % (endTime - startTime))
         # print('***************************')
         # print('pressure force = ' + str(pressure_force))
-        # print(np.linalg.norm(pressure_force_back - pressure_force))
+        # print("pressure force")
+        # print("%d th frame pressforce = %.3f"  % (self.frameid, np.linalg.norm(pressure_force_bak - pressure_force)))
         return pressure_force
+
+    def compute_sub_point_density(self, para):
+        assert para.shape == (3,) # procnum, st_point_id, ed_point_id
+        procnum = para[0]
+        st_point_id = para[1]
+        ed_point_id = para[2]
+        # print(para)
+        # print('st ed = %d %d' % (st_point_id, ed_point_id))
+        cur_particles_num = ed_point_id - st_point_id
+        W_xi_xj = np.zeros([self.particles_num, cur_particles_num])
+        for i in range(cur_particles_num):
+            id = i + st_point_id
+            dist = np.reshape(self.point_pos[:, id], (2, 1)) - self.point_pos
+            assert dist.shape == (2, self.particles_num)
+            W_xi_xj[:, i] = self.W_poly6_0_order_constant(dist)
+            # print(id)
+            # if id == self.particles_num - 1:
+            #     print('false Wxixj %d th col = %s' % (id, str(W_xi_xj[:, i])))
+
+        return (procnum, W_xi_xj)
 
     def compute_point_density(self):
         '''
@@ -644,20 +734,41 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
         :return: None
         '''
 
-        # compute W(|xi-xj|_{n*n})
         W_xi_xj = np.zeros([self.particles_num, self.particles_num])
-        for i in range(W_xi_xj.shape[1]):
-            dist = np.reshape(self.point_pos[:, i], (2, 1)) - self.point_pos
-            assert dist.shape == (2, self.particles_num)
-            W_xi_xj[:, i] = self.W_poly6_0_order_constant(dist)
-        # print(W_xi_xj)
+        W_xi_xj_bak = None
+        sph_point_density_bak = None
+        if self.MULTIPLEPROCESS == True:
+            pool = Pool(self.multipleprocess_num)
+            data = pool.map(self.compute_sub_point_density, self.multipleprocess_infolist)
+            pool.close()
+            pool.join()
+            for i in range(len(data)):
+                procnum, Wij = data[i]
+                # print(procnum)
+                st_id = self.multipleprocess_infolist[procnum][1]
+                ed_id = self.multipleprocess_infolist[procnum][2]
+                assert Wij.shape == (self.particles_num, ed_id - st_id)
+                W_xi_xj[:, st_id : ed_id] = Wij
+            assert W_xi_xj.shape == (self.particles_num, self.particles_num)
+            # W_xi_xj_bak = W_xi_xj.copy()
+            # print('false W_xixj = ' + str(W_xi_xj))
 
-        # compute the point density
-        assert self.point_mass.shape == (self.particles_num, )
+            # sph_point_density_bak = np.dot(self.point_mass, W_xi_xj)
+            # print(W_xi_xj)
+        else:
+            # compute W(|xi-xj|_{n*n})
+            for i in range(W_xi_xj.shape[1]):
+                dist = np.reshape(self.point_pos[:, i], (2, 1)) - self.point_pos
+                assert dist.shape == (2, self.particles_num)
+                W_xi_xj[:, i] = self.W_poly6_0_order_constant(dist)
+            # print(W_xi_xj)
+
+            # compute the point density
+            assert self.point_mass.shape == (self.particles_num, )
+            # print(self.point_mass.shape)
+            # print('true W_xixj = ' + str(W_xi_xj))
         self.sph_point_density = np.dot(self.point_mass, W_xi_xj)
-        # print('point_mass = %s' % str(self.point_mass.transpose()))
-        # print('W_xi_xj = %s' % str(W_xi_xj))
-        # print('res = %s' % str(self.sph_point_density))
+
         assert self.sph_point_density.shape == (self.particles_num, )
 
         return
@@ -671,8 +782,9 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
         '''
         # rho_0 = np.min(self.sph_point_density) / 500
         rho_0 = 0
+        # print(self.sph_point_density)
         self.sph_point_pressure = self.gas_constant * (self.sph_point_density - rho_0)
-
+        assert self.sph_point_pressure.shape == (self.particles_num, )
         return
 
     def W_poly6_0_order_constant(self, pos):
@@ -719,7 +831,6 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
         cur_particle_num = pos.shape[1]
         radius = np.linalg.norm(pos, axis = 0, ord = 2)
 
-        # 这里可以用列表生成式优化
         # t1 = time.time()
         # dW_dxy = self.kernel_poly6_coeff * np.array([-6 * ((self.kernel_poly6_d**2 - radius[i] ** 2)**2) * np.reshape(pos[:, i], (2,)) if 0<= radius[i]<= self.kernel_poly6_d else np.zeros(2) for i in range(self.particles_num)]).transpose()
         #t2 = time.time()

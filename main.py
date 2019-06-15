@@ -11,13 +11,14 @@ if __name__ == '__main__':
     record_save_dir = "./record/"
 
     # simulator config
-    particles_num = 2300
-    particles_num = int(particles_num ** 0.5) ** 2
+    particles_num = 3000
+    # particles_num = int(particles_num ** 0.5) ** 2
     timestep = 0.003
     gravity = 9.8
     space_left_down_corner = (0.0, 0.0)
     space_right_up_corner = (100.0, 100.0)
     collision_test = True
+    multi_processor = True
 
     # simulator init
     # sim = ParticleWaterSimulatorEasy(
@@ -49,7 +50,8 @@ if __name__ == '__main__':
         gravity_= gravity,
         collision_detect_ = collision_test,
         kernel_poly6_d_= d,
-        record_save_dir_ = record_save_dir)
+        record_save_dir_ = record_save_dir,
+        multi_processor_ = multi_processor)
 
     plt.ion()
     t1 = time.time()
@@ -58,7 +60,7 @@ if __name__ == '__main__':
         points = sim.dotimestep()
 
         # paint points
-        plt.scatter(points[0], points[1], s = 5)
+        plt.scatter(points[0], points[1], s = 1)
 
         # paint wall
         wall_x_dist = space_right_up_corner[0] - space_left_down_corner[0]
@@ -68,7 +70,7 @@ if __name__ == '__main__':
         tools.paint_wall_by_2_corners(space_left_down_corner, space_right_up_corner)
 
         # title
-        plt.title("FPS: %.1f, particle_num: %d, cur_time = %.2f" % ((1.0/(time.time() - t1 + 1e-6)), sim.get_particle_num(), sim.get_cur_time()))
+        plt.title("FPS: %.2f, particle_num: %d, cur_time = %.2f" % ((1.0/(time.time() - t1 + 1e-6)), sim.get_particle_num(), sim.get_cur_time()))
         t1 = time.time()
         # print('[log][display] simulator cost %.3f s, display cost %.3f s' % ((t2 - t1), (t_last - t2)))
 
