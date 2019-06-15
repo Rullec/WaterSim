@@ -1,6 +1,10 @@
 import numpy as np
 import time
 import logging
+import numpy as np
+import multiprocessing
+from multiprocessing import Pool
+
 
 '''
     Class ParticleWaterSimulator
@@ -13,6 +17,27 @@ import logging
     
     "DOTIMESTEP" IS THE CORE FUNCTION FOR SIMULATION PROCEDURE.
 '''
+class Emmiter:
+    emit_pos = None
+    emit_mode = None
+    emit_point_mass = 1
+    def __init__(self, emit_pos_):
+        assert emit_pos_.shape == (2, )
+        self.emit_pos = emit_pos_
+        self.emit_mode = "linear"
+
+    def blow(self, point_num):
+        point_pos = np.reshape(self.emit_pos, (2, 1)).repeat(point_num, axis = 1)
+        point_vel = None
+        point_acc = None
+        point_mass = None
+        if "linear" == self.emit_mode:
+            single_vel = np.array([10, 10])
+            point_vel = np.reshape(single_vel, (2, 1)).repeat(point_num, axis = 1)
+            point_acc = np.zeros([2, point_num])
+            point_mass = np.ones(point_num) * self.emit_point_mass
+
+        return point_pos, point_vel, point_acc, point_mass
 
 class ParticleWaterSimulatorBase2D:
     # simulation params
@@ -27,7 +52,7 @@ class ParticleWaterSimulatorBase2D:
 
     # collision penalty force coeff
     collision_epsilon = -1
-    collision_penalty_k = 3e3  # control the distance
+    collision_penalty_k = 5e3  # control the distance
     collision_penalty_b = 1  # control the velocity
 
     # damping coeff
@@ -44,8 +69,22 @@ class ParticleWaterSimulatorBase2D:
     time_cost_compute_force = 0.0
     time_cost_collision_test = 0.0
 
+    # emiiter
+    emmiter1 = None
+    emit_amount = None
+
     # logging module
     logger = None
+    log = None
+
+    # record mode
+    record = False
+    record_dir = None
+    record_filename = None
+
+    # SP or MP, it will decide by the simulator automatically
+    MultipleProcessing = -1
+    MultipleProcessingNum = -1
 
     def __init__(self,
                  particle_nums_,
@@ -53,7 +92,8 @@ class ParticleWaterSimulatorBase2D:
                  space_left_down_corner_,
                  space_right_up_corner_,
                  gravity_,
-                 collision_detect_):
+                 collision_detect_,
+                 record_save_dir_):
         '''
 
         :param particle_nums_:
@@ -71,7 +111,9 @@ class ParticleWaterSimulatorBase2D:
         logger.info('[SimulatorBase] Init begin')
 
         # system property
-        self.particles_num = particle_nums_
+        x_num = int(particle_nums_ ** 0.5)
+        y_num = int(particle_nums_ ** 0.5)
+        self.particles_num = x_num * y_num
         self.point_pos = np.zeros([2, self.particles_num])
         self.point_vel = np.zeros([2, self.particles_num])
         self.point_acc = np.zeros([2, self.particles_num])
@@ -82,9 +124,15 @@ class ParticleWaterSimulatorBase2D:
         # init these points
         space_length = space_right_up_corner_[0] - space_left_down_corner_[0]
         space_height = space_right_up_corner_[1] - space_left_down_corner_[1]
-        self.point_pos[0, :] = space_length / 2 * np.random.rand(1, self.particles_num) + space_left_down_corner_[
+
+        # self.point_pos[0, :] = space_length / 2 * np.tile(np.linspace(0, 1, num = x_num), y_num) + space_left_down_corner_[
+        #     0] + space_length / 4
+        # self.point_pos[1, :] = space_height / 2 * np.repeat(np.linspace(0, 1, num = y_num), x_num) + space_left_down_corner_[
+        #     1] + space_height / 3
+
+        self.point_pos[0, :] = space_length / 2 * np.random.rand( self.particles_num) + space_left_down_corner_[
             0] + space_length / 4
-        self.point_pos[1, :] = space_height / 2 * np.random.rand(1, self.particles_num) + space_left_down_corner_[
+        self.point_pos[1, :] = space_height / 2 * np.random.rand( self.particles_num) + space_left_down_corner_[
             1] + space_height / 10
 
         # simulation property
@@ -93,7 +141,18 @@ class ParticleWaterSimulatorBase2D:
         self.collision_detect = collision_detect_
         self.collision_epsilon = min(space_height, space_length) / 100
 
+        # record mode init
+        self.record_dir = record_save_dir_
+        self.record_filename = self.record_dir + str(time.strftime("%Y-%m-%d %H%M%S", time.localtime())) + str('.txt')
 
+        # init emitter
+        self.emmiter1 = Emmiter(np.array([0, 0]))
+        self.emit_amount = 1
+
+        # MP computation setting
+        if self.particles_num > 1300:
+            self.MultipleProcessing = True
+            self.MultipleProcessingNum = multiprocessing.cpu_count()
 
         # print('particle_num = %d' % self.particles_num)
         # print('timestep = %d' % self.timestep)
@@ -121,6 +180,9 @@ class ParticleWaterSimulatorBase2D:
 
     def get_frameid(self):
         return self.frameid
+
+    def get_particle_num(self):
+        return self.particles_num
 
     # update simulation state
     # currently, the explicit euler method
@@ -195,6 +257,22 @@ class ParticleWaterSimulatorBase2D:
 
         return points_gravity
 
+    def record_data(self):
+        with open(self.record_filename, 'a') as f:
+            f.write("%d %d " % (self.frameid, self.particles_num))
+            for i in range(self.particles_num):
+                f.write("%.5f %.5f " % (self.point_pos[0, i], self.point_pos[1, i], ))
+            f.write("\n")
+    def emitter_inject(self):
+        self.particles_num += self.emit_amount
+        pos, vel, acc, mass = self.emmiter1.blow(self.emit_amount)
+
+        self.point_pos = np.concatenate((self.point_pos, pos), axis=1)
+        self.point_vel = np.concatenate((self.point_vel, vel), axis=1)
+        self.point_acc = np.concatenate((self.point_acc, acc), axis=1)
+        self.point_mass = np.append(self.point_mass, mass)
+
+
 class ParticleWaterSimulatorEasy(ParticleWaterSimulatorBase2D):
 
     # lennard jones forces coef
@@ -204,9 +282,9 @@ class ParticleWaterSimulatorEasy(ParticleWaterSimulatorBase2D):
     lennard_jones_n = 2
 
     def __init__(self, particle_nums_, timestep_, space_left_down_corner_, space_right_up_corner_, gravity_,
-                 collision_detect_):
+                 collision_detect_, record_save_dir_):
         ParticleWaterSimulatorBase2D.__init__(self, particle_nums_, timestep_, space_left_down_corner_, space_right_up_corner_, gravity_,
-                 collision_detect_)
+                 collision_detect_, record_save_dir_)
         return
 
     def dotimestep(self):
@@ -225,7 +303,6 @@ class ParticleWaterSimulatorEasy(ParticleWaterSimulatorBase2D):
         self.cur_time += self.timestep
         self.frameid += 1
         self.time_cost_dotimestep = time.time() - st
-        self.logger("")
         print('[log][simulator] do timestep, cur time = %.3f s, cur frameid = %d' % (self.cur_time, self.frameid))
         print('[log][simulator] dotimestep cost %.5f s, jones force cost %.5f s' % (
         self.time_cost_dotimestep, self.time_cost_jones_force))
@@ -310,12 +387,12 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
     gas_constant = 8.314
 
     # simulation variables
-    viscosity_coeff = 1e-2 # the viscosity of water is 1e-3
+    viscosity_coeff = 1e-3 # the viscosity of water is 1e-3
 
     def __init__(self, particle_nums_, timestep_, space_left_down_corner_, space_right_up_corner_, gravity_,
-                 collision_detect_, kernel_poly6_d_):
+                 collision_detect_, kernel_poly6_d_, record_save_dir_):
         ParticleWaterSimulatorBase2D.__init__(self, particle_nums_, timestep_, space_left_down_corner_, space_right_up_corner_, gravity_,
-                 collision_detect_)
+                 collision_detect_, record_save_dir_)
 
         # init sph variable
         self.kernel_poly6_d = kernel_poly6_d_
@@ -326,6 +403,10 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
 
     def dotimestep(self):
         st = time.time()
+
+        # emit
+        if np.random.rand(1)[0] > 0.8:
+            self.emitter_inject()
 
         # compute force
         points_force = self.compute_force()
@@ -343,32 +424,50 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
         self.time_cost_dotimestep = time.time() - st
         print('[log][simulator] do timestep, cur time = %.3f s, cur frameid = %d' % (self.cur_time, self.frameid))
 
+        # record
+        self.record_data()
         return self.point_pos
 
     def compute_force(self):
+        st = time.time()
         sum_force = np.zeros([2, self.particles_num])
 
         # 1.1 compute the point density
+        st1 = time.time()
         self.compute_point_density()
+        st2 = time.time()
+        time_compute_density = st2 - st1
 
         # 1.2 compute the pressure (not force) in eache point
+        st1 = time.time()
         self.compute_point_pressure()
+        st2 = time.time()
+        time_compute_point_pressure = st2 - st1
 
         # 1.3 compute the pressure force for each point
+        st1 = time.time()
         pressure_force = self.compute_pressure_force()
+        st2 = time.time()
+        time_compute_pressure = st2 - st1
 
         # 1.4 compute the viscosity force
+        st1 = time.time()
         viscosity_force = self.compute_viscosity_force()
+        st2 = time.time()
+        time_viscosity = st2 - st1
 
         # 1.5 compute the gravity
         gravity = self.compute_gravity_force()
 
         # 1.6 compute the collision force
         # print('collsion = ' + str(self.collision_detect))
+        st1 = time.time()
         if self.collision_detect == True:
             collision_force = self.do_collision_test_between_wall_and_particles()
         else:
             collision_force = np.zeros([2, self.particles_num])
+        st2 = time.time()
+        time_collision = st2 - st1
 
         # 1.7 compute the damping force
         damping_force = self.compute_damping_force()
@@ -380,6 +479,13 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
         sum_force += collision_force
         sum_force += damping_force
 
+        ed = time.time()
+        time_total = ed - st + 1e-6
+        print("compute force cost time (%.3f) s, collision %.3f s(%.3f%%), pressure %.3f s(%.3f%%), viscosity %.3f s(%.3f%%), point_density %.3f s(%.3f%%) , point pressure %.3fs(%.3f%%)."
+                         % (time_total, time_collision, time_collision/time_total * 100,
+                            time_compute_pressure, time_compute_pressure/time_total * 100,
+                            time_viscosity, time_viscosity/time_total * 100,
+                            time_compute_density, time_compute_density/time_total * 100, time_compute_point_pressure, time_compute_point_pressure/time_total * 100))
         return sum_force
 
     def compute_viscosity_force(self):
@@ -424,11 +530,40 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
             # compute the result
             viscosity_force[:, i] = self.viscosity_coeff * np.dot(ddW_dxy2 , velocity_diff_coef_vec)
 
-            np.set_printoptions(linewidth=200, floatmode='fixed')
+            # np.set_printoptions(linewidth=200, floatmode='fixed')
             # print('ddW_dxy = ' + str(ddW_dxy2))
             # print('coef = ' + str(velocity_diff_coef_vec))
         # print('viscosity force = ' + str(viscosity_force))
         return viscosity_force
+
+    def compute_sub_pressure_force(self, para):
+        assert para.shape == (3,) # procnum, st_point_id, ed_point_id
+        procnum = para[0]
+        st_point_id = para[1]
+        ed_point_id = para[2]
+        # print('st ed = %d %d' % (st_point_id, ed_point_id))
+        cur_particles_num = ed_point_id - st_point_id
+        pressure_force = np.zeros([2, cur_particles_num])
+
+        # compute
+        for i in range(cur_particles_num):
+            id = i + st_point_id
+            coeff_vector = self.point_mass * (self.sph_point_pressure + self.sph_point_pressure[id]) / (
+                        2 * self.sph_point_density)
+            assert coeff_vector.shape == (self.particles_num,)
+
+            # compute the ∇W(|xi - xj|)
+            pos_diff = np.reshape(self.point_pos[:, id], (2, 1)) - self.point_pos
+            dW_dxy = self.W_poly6_1_order_gradient(pos_diff)
+
+            assert dW_dxy.shape == (2, self.particles_num)
+
+            # compute the pressure_i
+            pressure_force_i = -np.dot(dW_dxy, coeff_vector)
+
+            # compute the pressure_i
+            pressure_force[:, i] = pressure_force_i
+        return (procnum, pressure_force)
 
     def compute_pressure_force(self):
         '''
@@ -439,27 +574,64 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
                            = - np.dot(∇W(|xi - xj|)_{2*n}, coeff_vec_j_{n*1}) = (2, 1)
         '''
         pressure_force = np.zeros([2, self.particles_num])
-        for i in range(self.particles_num):
-            # compute the coeff vector
-            coeff_vector = self.point_mass * (self.sph_point_pressure + self.sph_point_pressure[i]) / (2 * self.sph_point_density)
-            assert coeff_vector.shape == (self.particles_num, )
+        pressure_force_back = None
+        if self.MultipleProcessing == True:
+            startTime = time.time()
+            testFL = []
+            ed_id = None
+            record_point_num = []
+            for i in range(self.MultipleProcessingNum):
+                if 0 == i:
+                    st_id = 0
+                    ed_id = int((i+1) / self.MultipleProcessingNum * self.particles_num)
+                elif i == self.MultipleProcessingNum - 1:
+                    st_id = ed_id + 1
+                    ed_id = self.particles_num
+                else:
+                    st_id = ed_id + 1
+                    ed_id = int((i+1) / self.MultipleProcessingNum * self.particles_num)
+                if st_id > ed_id:
+                    st_id = ed_id
+                record_point_num.append((ed_id - st_id, st_id, ed_id))
+                para = np.array([i, st_id, ed_id])
+                testFL.append(para)
 
-            # compute the ∇W(|xi - xj|)
-            # print(type(self.point_pos))
-            # print(self.point_pos.shape)
-            pos_diff = np.reshape(self.point_pos[:, i], (2,1)) - self.point_pos
-            dW_dxy = self.W_poly6_1_order_gradient(pos_diff)
+            pool = Pool(self.MultipleProcessingNum)
+            data = pool.map(self.compute_sub_pressure_force, testFL)
+            for procnum, force in data:
+                assert force.shape == (2, record_point_num[procnum][0])
+                pressure_force[:, record_point_num[procnum][1] : record_point_num[procnum][2]] = force
+            pool.close()
+            pool.join()
+            endTime = time.time()
+            pressure_force_back = pressure_force
+            # print("MP time : %.3F" % (endTime - startTime))
+        else:
+            startTime = time.time()
+            for i in range(self.particles_num):
+                # compute the coeff vector
+                coeff_vector = self.point_mass * (self.sph_point_pressure + self.sph_point_pressure[i]) / (2 * self.sph_point_density)
+                assert coeff_vector.shape == (self.particles_num, )
 
-            assert dW_dxy.shape == (2, self.particles_num)
-            # if np.linalg.norm(dW_dxy) > 1:
-                # print(' %d th point info' % i)
-                # print('dW_dxy = ' + str(dW_dxy))
-                # print('coeff_vector = ' + str(coeff_vector))
-            # compute the pressure_i
-            pressure_force_i = -np.dot(dW_dxy, coeff_vector)
-            pressure_force[:, i] = pressure_force_i
+                # compute the ∇W(|xi - xj|)
+                # print(type(self.point_pos))
+                # print(self.point_pos.shape)
+                pos_diff = np.reshape(self.point_pos[:, i], (2,1)) - self.point_pos
+                dW_dxy = self.W_poly6_1_order_gradient(pos_diff)
+
+                assert dW_dxy.shape == (2, self.particles_num)
+                # if np.linalg.norm(dW_dxy) > 1:
+                    # print(' %d th point info' % i)
+                    # print('dW_dxy = ' + str(dW_dxy))
+                    # print('coeff_vector = ' + str(coeff_vector))
+                # compute the pressure_i
+                pressure_force_i = -np.dot(dW_dxy, coeff_vector)
+                pressure_force[:, i] = pressure_force_i
+            endTime = time.time()
+            # print("SP time : %.3F" % (endTime - startTime))
         # print('***************************')
         # print('pressure force = ' + str(pressure_force))
+        # print(np.linalg.norm(pressure_force_back - pressure_force))
         return pressure_force
 
     def compute_point_density(self):
@@ -497,8 +669,8 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
             now, ρ0 = min(ρ) / 500
         :return: None
         '''
-        rho_0 = np.min(self.sph_point_density) / 500
-        # rho_0 = 0
+        # rho_0 = np.min(self.sph_point_density) / 500
+        rho_0 = 0
         self.sph_point_pressure = self.gas_constant * (self.sph_point_density - rho_0)
 
         return
@@ -514,11 +686,11 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
         '''
         assert pos.shape == (2, self.particles_num)
         radius = np.linalg.norm(pos, ord = 2, axis = 0) # radius means r
+        radius_2 = radius ** 2
+        d_2 = self.kernel_poly6_d ** 2
 
         # compute the W_poly6(r)
-        W_poly6 = [self.kernel_poly6_coeff * (self.kernel_poly6_d ** 2 - radius[i] ** 2) ** 3 if 0<= radius[i]<= self.kernel_poly6_d \
-                 else 0 for i in range(self.particles_num)]
-        W_poly6 = np.array(W_poly6, )
+        W_poly6 = self.kernel_poly6_coeff * np.array([ (d_2 - radius_2[i]) ** 3 if radius[i]<= self.kernel_poly6_d else 0 for i in range(self.particles_num)])
         assert  W_poly6.shape == (self.particles_num, )
 
         # return
@@ -543,20 +715,29 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
         '''
         # compute ∂x_j ∂y_j seperately for easy reading
 
-        assert pos.shape == (2, self.particles_num)
+        assert pos.shape[0] == 2
+        cur_particle_num = pos.shape[1]
         radius = np.linalg.norm(pos, axis = 0, ord = 2)
 
         # 这里可以用列表生成式优化
-        dW_dx = self.kernel_poly6_coeff * np.array([-6 * ((self.kernel_poly6_d**2 - radius[i] ** 2)**2) * pos[0, i] if 0<= radius[i]<= self.kernel_poly6_d else 0 for i in range(self.particles_num)])
-        dW_dy = self.kernel_poly6_coeff * np.array([-6 * ((self.kernel_poly6_d**2 - radius[i] ** 2)**2) * pos[1, i] if 0<= radius[i]<= self.kernel_poly6_d else 0 for i in range(self.particles_num)])
-        assert  dW_dx.shape == (self.particles_num, )
-        assert  dW_dy.shape == (self.particles_num, )
+        # t1 = time.time()
+        # dW_dxy = self.kernel_poly6_coeff * np.array([-6 * ((self.kernel_poly6_d**2 - radius[i] ** 2)**2) * np.reshape(pos[:, i], (2,)) if 0<= radius[i]<= self.kernel_poly6_d else np.zeros(2) for i in range(self.particles_num)]).transpose()
+        #t2 = time.time()
+        coeff_vector = (self.kernel_poly6_d ** 2 - radius ** 2)**2# d**2 - radius[i]^2yield
+
+        dW_dx = np.array([pos[0, i] if radius[i]< self.kernel_poly6_d else 0 for i in range(cur_particle_num)])
+        dW_dy = np.array([pos[1, i] if radius[i]< self.kernel_poly6_d else 0 for i in range(cur_particle_num)])
+        dW_dx = np.multiply(coeff_vector, dW_dx)
+        dW_dy = np.multiply(coeff_vector, dW_dy)
+        assert  dW_dx.shape == (cur_particle_num, )
+        assert  dW_dy.shape == (cur_particle_num, )
 
         # shape the final result dW_dxy, then return
-        dW_dxy = np.zeros([2, self.particles_num])
+        dW_dxy = np.zeros([2, cur_particle_num])
         dW_dxy[0, :] = dW_dx
         dW_dxy[1, :] = dW_dy
 
+        dW_dxy = -6 * self.kernel_poly6_coeff * dW_dxy
         return dW_dxy
 
     def W_poly6_2_order_jacob(self, pos_diff):
@@ -579,8 +760,10 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase2D):
         pos_yy = pos_diff[1] ** 2
         pos_xy = np.multiply(pos_diff[0], pos_diff[1])
         for i in range(self.particles_num):
-            if 0 <= radius[i] <= self.kernel_poly6_d:
+            if radius[i] <= self.kernel_poly6_d:
                 ddW_dxy2[:, 2*i:2*(i+1)] = (6 * d2_r2_diff[i]) * (4 * np.array([[pos_xx[i], pos_xy[i]], [pos_xy[i], pos_yy[i]]]) - d2_r2_diff[i] * np.identity(2))
+
+        # print(ddW_dxy2.shape)
         ddW_dxy2 *= self.kernel_poly6_coeff
 
         return ddW_dxy2
