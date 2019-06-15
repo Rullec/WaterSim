@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import time
-from simulator import ParticleWaterSimulatorEasy, ParticleWaterSimulatorSPH
+from simulator import ParticleWaterSimulatorEasy, ParticleWaterSimulatorSPH, ParticleWaterSimulatorBase
 import tools
 import os
 import shutil
@@ -11,12 +11,17 @@ if __name__ == '__main__':
     record_save_dir = "./record/"
 
     # simulator config
+    simulator_dimension = 2
     particles_num = 3000
+
     # particles_num = int(particles_num ** 0.5) ** 2
     timestep = 0.003
     gravity = 9.8
-    space_left_down_corner = (0.0, 0.0)
-    space_right_up_corner = (100.0, 100.0)
+    # space_left_down_corner = (0.0, 0.0)
+    # space_right_up_corner = (100.0, 100.0)
+    space_left_down_corner = (0.0, 0.0, 0.0)
+    space_right_up_corner = (100.0, 100.0, 100.0)
+
     collision_test = True
     multi_processor = True
 
@@ -39,10 +44,12 @@ if __name__ == '__main__':
         os.mkdir(record_save_dir)
 
     # 这里需要和下面保持一致
-    space = (space_right_up_corner[0] - space_left_down_corner[0]) * (space_right_up_corner[1] - space_left_down_corner[1]) / 4
-    d = max((( space / particles_num) / 3.14)**0.5, 1)
+    # space2D = (space_right_up_corner[0] - space_left_down_corner[0]) * (space_right_up_corner[1] - space_left_down_corner[1]) / 4
+    space3D = (space_right_up_corner[0] - space_left_down_corner[0]) * (space_right_up_corner[1] - space_left_down_corner[1]) * (space_right_up_corner[2] - space_left_down_corner[2])
+    d = max((( space3D / particles_num) / 3.14)**0.5, 1)
 
-    sim = ParticleWaterSimulatorSPH(
+    sim = ParticleWaterSimulatorBase(
+        simulator_base_dimension_ = simulator_dimension,
         particle_nums_ = particles_num,
         timestep_= timestep,
         space_left_down_corner_= space_left_down_corner,
@@ -60,13 +67,15 @@ if __name__ == '__main__':
         points = sim.dotimestep()
 
         # paint points
-        plt.scatter(points[0], points[1], s = 1)
+        plt.scatter(points[0], points[1], points[2], s = 1)
 
         # paint wall
         wall_x_dist = space_right_up_corner[0] - space_left_down_corner[0]
         wall_y_dist = space_right_up_corner[1] - space_left_down_corner[1]
+        wall_z_dist = space_right_up_corner[2] - space_left_down_corner[2]
         plt.xlim(space_left_down_corner[0] - wall_x_dist/2, space_right_up_corner[0] + wall_x_dist/2)
         plt.ylim(space_left_down_corner[1] - wall_y_dist/2, space_right_up_corner[1] + wall_y_dist/2)
+        plt.zlim(space_left_down_corner[2] - wall_y_dist/2, space_right_up_corner[2] + wall_z_dist/2)
         tools.paint_wall_by_2_corners(space_left_down_corner, space_right_up_corner)
 
         # title

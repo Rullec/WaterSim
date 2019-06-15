@@ -20,34 +20,45 @@ class Emmiter:
     emit_pos = None
     emit_mode = None
     emit_point_mass = 1
+    emit_base_dimentsion = -1
+
     def __init__(self, emit_pos_):
-        assert emit_pos_.shape == (2, )
+        assert emit_pos_.shape == (2, ) or emit_pos_.shape == (3, )
+        self.emit_base_dimentsion = emit_pos_.shape[0]
         self.emit_pos = emit_pos_
         self.emit_mode = "linear"
 
     def blow(self, point_num):
-        point_pos = np.reshape(self.emit_pos, (2, 1)).repeat(point_num, axis = 1)
+        point_pos = np.reshape(self.emit_pos, (self.emit_base_dimentsion, 1)).repeat(point_num, axis = 1)
         point_vel = None
         point_acc = None
         point_mass = None
         if "linear" == self.emit_mode:
-            single_vel = np.array([10, 10])
-            point_vel = np.reshape(single_vel, (2, 1)).repeat(point_num, axis = 1)
-            point_acc = np.zeros([2, point_num])
+            single_vel = np.ones(self.emit_base_dimentsion) * 10
+            point_vel = np.reshape(single_vel, (self.emit_base_dimentsion, 1)).repeat(point_num, axis = 1)
+            point_acc = np.zeros([self.emit_base_dimentsion, point_num])
             point_mass = np.ones(point_num) * self.emit_point_mass
 
         return point_pos, point_vel, point_acc, point_mass
 
-class ParticleWaterSimulatorBase2D:
+class ParticleWaterSimulatorBase:
+    # 2D simulator or 3D simulator?
+    simulator_base_dimension = -1
+
     # simulation params
     cur_time = 0.0
     timestep = 0.0
     frameid = 0
     particles_num = -1
-    space_left_down_corner = (0.0, 0.0)
-    space_right_up_corner = (1.0, 1.0)
+    space_left_down_corner = None
+    space_right_up_corner = None
     g = 0
     collision_detect = False
+
+    # simulation space
+    space_length = 0
+    space_height = 0
+    space_width = 0
 
     # collision penalty force coeff
     collision_epsilon = -1
@@ -58,9 +69,9 @@ class ParticleWaterSimulatorBase2D:
     damping_coeff = 1
 
     # status varibles
-    point_pos = np.zeros([2, 0])
-    point_vel = np.zeros([2, 0])
-    point_acc = np.zeros([2, 0])
+    point_pos = np.zeros([simulator_base_dimension, 0])
+    point_vel = np.zeros([simulator_base_dimension, 0])
+    point_acc = np.zeros([simulator_base_dimension, 0])
     point_mass = np.zeros(0)
 
     # system cost time record
@@ -87,6 +98,7 @@ class ParticleWaterSimulatorBase2D:
     multipleprocess_infolist = []
 
     def __init__(self,
+                 simulator_base_dimension_,
                  particle_nums_,
                  timestep_,
                  space_left_down_corner_,
@@ -115,40 +127,40 @@ class ParticleWaterSimulatorBase2D:
         # x_num = int(particle_nums_ ** 0.5)
         # y_num = int(particle_nums_ ** 0.5)
         # self.particles_num = x_num * y_num
+        self.simulator_base_dimension = simulator_base_dimension_
         self.particles_num = particle_nums_
-        self.point_pos = np.zeros([2, self.particles_num])
-        self.point_vel = np.zeros([2, self.particles_num])
-        self.point_acc = np.zeros([2, self.particles_num])
+        self.point_pos = np.zeros([self.simulator_base_dimension, self.particles_num])
+        self.point_vel = np.zeros([self.simulator_base_dimension, self.particles_num])
+        self.point_acc = np.zeros([self.simulator_base_dimension, self.particles_num])
         self.point_mass = np.ones(self.particles_num)
         self.space_left_down_corner = space_left_down_corner_
         self.space_right_up_corner = space_right_up_corner_
-
-        # init these points
-        space_length = space_right_up_corner_[0] - space_left_down_corner_[0]
-        space_height = space_right_up_corner_[1] - space_left_down_corner_[1]
 
         # self.point_pos[0, :] = space_length / 2 * np.tile(np.linspace(0, 1, num = x_num), y_num) + space_left_down_corner_[
         #     0] + space_length / 4
         # self.point_pos[1, :] = space_height / 2 * np.repeat(np.linspace(0, 1, num = y_num), x_num) + space_left_down_corner_[
         #     1] + space_height / 3
+        self.init_points_variables()
 
-        self.point_pos[0, :] = space_length / 2 * np.random.rand( self.particles_num) + space_left_down_corner_[
-            0] + space_length / 4
-        self.point_pos[1, :] = space_height / 2 * np.random.rand( self.particles_num) + space_left_down_corner_[
-            1] + space_height / 10
 
         # simulation property
         self.g = gravity_
         self.timestep = timestep_
         self.collision_detect = collision_detect_
-        self.collision_epsilon = min(space_height, space_length) / 100
+        if self.simulator_base_dimension == 2:
+            self.collision_epsilon = min(self.space_height, self.space_length) / 100
+        elif self.simulator_base_dimension == 3:
+            self.collision_epsilon = min(self.space_height, self.space_length, self.space_width) / 100
 
         # record mode init
         self.record_dir = record_save_dir_
         self.record_filename = self.record_dir + str(time.strftime("%Y-%m-%d %H%M%S", time.localtime())) + str('.txt')
 
         # init emitter
-        self.emmiter1 = Emmiter(np.array([0, 0]))
+        if self.simulator_base_dimension ==  2:
+            self.emmiter1 = Emmiter(np.array([0, 0]))
+        elif self.simulator_base_dimension == 3:
+            self.emmiter1 = Emmiter(np.array([0, 0, 0]))
         self.emit_amount = 1
 
         # MP computation setting
@@ -165,6 +177,21 @@ class ParticleWaterSimulatorBase2D:
         # print('******************Simulator Init Succ****************')
         logger.info('[SimulatorBase] Init succ')
         return
+
+    def init_points_variables(self, space_right_up_corner_, space_left_down_corner_):
+        # init these points
+        if self.simulator_base_dimension == 2:
+            self.space_length = space_right_up_corner_[0] - space_left_down_corner_[0]
+            self.space_height = space_right_up_corner_[1] - space_left_down_corner_[1]
+            self.point_pos[0, :] = self.space_length / 2 * np.random.rand( self.particles_num) + space_left_down_corner_[
+                0] + self.space_length / 4
+            self.point_pos[1, :] = self.space_height / 2 * np.random.rand( self.particles_num) + space_left_down_corner_[
+                1] + self.space_height / 4
+        elif self.simulator_base_dimension == 3:
+            self.space_width = space_right_up_corner_[2] - space_left_down_corner_[2]
+            self.point_pos[2, :] = self.space_width / 2 * np.random.rand(self.particles_num) + space_left_down_corner_[1] + self.space_width / 10
+        else:
+            raise("the dimension is illegal")
 
     def dotimestep(self):
         # dynamic simulation - compute total forces and acceleration
