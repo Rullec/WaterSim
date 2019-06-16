@@ -233,7 +233,53 @@ class ParticleWaterSimulatorBase:
         self.point_pos += self.timestep * self.point_vel
 
     def do_collision_test_between_wall_and_particles_3d(self):
+
+        st = time.time()
         collision_force = np.zeros([3, self.particles_num])
+        x_left = self.space_left_down_corner[0]
+        x_right = self.space_right_up_corner[0]
+        y_down = self.space_left_down_corner[1]
+        y_up = self.space_right_up_corner[1]
+        z_low = self.space_left_down_corner[2]
+        z_high = self.space_right_up_corner[2]
+
+        for i in range(self.particles_num):
+            # for a point i
+            pos_i = self.point_pos[:, i]
+            vel_i = self.point_vel[:, i]
+            next_pos = pos_i + self.timestep * vel_i
+
+            if abs(pos_i[0] - x_left) < self.collision_epsilon:
+                collision_force[:, i][0] += abs(pos_i[0] - x_left) * self.collision_penalty_k
+                if vel_i[0] < 0:
+                    collision_force[:, i][0] += np.abs(vel_i[0]) * self.collision_penalty_b
+                # print('[debug][collision] %d point collision with x' % i)
+
+            if abs(pos_i[0] - x_right) < self.collision_epsilon:
+                collision_force[:, i][0] += -(abs(pos_i[0] - x_right) * self.collision_penalty_k)
+                if vel_i[0] > 0:
+                    collision_force[:, i][0] += -abs(vel_i[0]) * self.collision_penalty_b
+                # print('[debug][collision] %d point collision with x' % i)
+
+            if abs(pos_i[1] - y_down) < self.collision_epsilon:
+                collision_force[:, i][1] += abs(pos_i[1] - y_down) * self.collision_penalty_k
+                if vel_i[1] < 0:
+                    collision_force[:, i][1] += np.abs(vel_i[1]) * self.collision_penalty_b
+
+            if abs(pos_i[1] - y_up) < self.collision_epsilon:
+                collision_force[:, i][1] += -abs(pos_i[1] - y_up) * self.collision_penalty_k
+                if vel_i[1] > 0:
+                    collision_force[:, i][1] += -np.abs(vel_i[1]) * self.collision_penalty_b
+
+            if abs(pos_i[2] - z_low) < self.collision_epsilon:
+                collision_force[:, i][2] += abs(pos_i[2] - z_low) * self.collision_penalty_k
+                if vel_i[2] < 0:
+                    collision_force[:, i][2] += np.abs(vel_i[2]) * self.collision_penalty_b
+
+            if abs(pos_i[2] - z_high) < self.collision_epsilon:
+                collision_force[:, i][2] += -abs(pos_i[2] - z_high) * self.collision_penalty_k
+                if vel_i[2] > 0:
+                    collision_force[:, i][2] += -np.abs(vel_i[2]) * self.collision_penalty_b
         return collision_force
 
     def do_collision_test_between_wall_and_particles_2d(self):
@@ -291,7 +337,7 @@ class ParticleWaterSimulatorBase:
         if self.simulator_base_dimension == 2:
             collision_force = self.do_collision_test_between_wall_and_particles_2d()
         elif self.simulator_base_dimension == 3:
-            print('[warning] the collision force in 3d hasn\'t been implemented')
+            # print('[warning] the collision force in 3d hasn\'t been implemented')
             collision_force = self.do_collision_test_between_wall_and_particles_3d()
 
         return collision_force

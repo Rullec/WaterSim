@@ -116,7 +116,6 @@ if __name__ == '__main__':
             else:
                 plt.savefig(img_save_dir + str(sim.get_frameid()))
 
-
             ax.cla()
     elif simulator_dimension == 2:
 
