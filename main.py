@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import axes3d, Axes3D
+from mpl_toolkits.mplot3d import Axes3D
 import time
 from simulator import ParticleWaterSimulatorEasy, ParticleWaterSimulatorSPH, ParticleWaterSimulatorBase
 import tools
@@ -7,6 +7,9 @@ import os
 import shutil
 
 if __name__ == '__main__':
+    # display mode or record mode
+    record_and_do_not_display = False
+
     # render config
     img_save_dir = "./imgs/"
     record_save_dir = "./record/"
@@ -18,10 +21,17 @@ if __name__ == '__main__':
     # particles_num = int(particles_num ** 0.5) ** 2
     timestep = 0.003
     gravity = 9.8
-    # space_left_down_corner = (0.0, 0.0)
-    # space_right_up_corner = (100.0, 100.0)
-    space_left_down_corner = (0.0, 0.0, 0.0)
-    space_right_up_corner = (100.0, 100.0, 100.0)
+    space_left_down_corner = None
+    space_right_up_corner = None
+
+    if simulator_dimension == 2:
+        space_left_down_corner = (0.0, 0.0)
+        space_right_up_corner = (100.0, 100.0)
+    elif simulator_dimension == 3:
+        space_left_down_corner = (0.0, 0.0, 0.0)
+        space_right_up_corner = (100.0, 100.0, 100.0)
+    else:
+        assert 0 == 1
 
     collision_test = True
     multi_processor = False
@@ -76,7 +86,8 @@ if __name__ == '__main__':
         record_save_dir_ = record_save_dir,
         multi_processor_ = multi_processor)
 
-    plt.ion()
+    if record_and_do_not_display == False:
+        plt.ion()
     t1 = time.time()
     if simulator_dimension == 3:
         fig = plt.figure()
@@ -86,12 +97,6 @@ if __name__ == '__main__':
             wall_x_dist = space_right_up_corner[0] - space_left_down_corner[0]
             wall_y_dist = space_right_up_corner[1] - space_left_down_corner[1]
             wall_z_dist = space_right_up_corner[2] - space_left_down_corner[2]
-            # plt.xlim(space_left_down_corner[0] - wall_x_dist/2, space_right_up_corner[0] + wall_x_dist/2)
-            # plt.ylim(space_left_down_corner[1] - wall_y_dist/2, space_right_up_corner[1] + wall_y_dist/2)
-            # plt.zlim(space_left_down_corner[2] - wall_z_dist/2, space_right_up_corner[2] + wall_z_dist/2)
-            # tools.paint_wall_by_2_corners(space_left_down_corner, space_right_up_corner)
-
-
 
             ax.scatter(points[0], points[1], points[2])
             ax.set_xlim(space_left_down_corner[0] - wall_x_dist / 2, space_right_up_corner[0] + wall_x_dist / 2)
@@ -103,9 +108,15 @@ if __name__ == '__main__':
             ax.set_zlabel('Z')
             # ax.set_title("123")
             ax.set_title("FPS: %.2f, particle_num: %d, cur_time = %.2f"% ((1.0 / (time.time() - t1 + 1e-6)), sim.get_particle_num(), sim.get_cur_time()))
+            tools.paint_wall_by_2_corners_3d(ax, space_left_down_corner, space_right_up_corner)
             # ax.set_title("FPS: ")# % ((1.0 / (time.time() - t1 + 1e-6)), sim.get_particle_num(), sim.get_cur_time()))
             t1 = time.time()
-            plt.pause(1e-5)
+            if record_and_do_not_display == False:
+                plt.pause(1e-5)
+            else:
+                plt.savefig(img_save_dir + str(sim.get_frameid()))
+
+
             ax.cla()
     elif simulator_dimension == 2:
 
@@ -116,22 +127,19 @@ if __name__ == '__main__':
             # paint wall
             wall_x_dist = space_right_up_corner[0] - space_left_down_corner[0]
             wall_y_dist = space_right_up_corner[1] - space_left_down_corner[1]
-            # wall_z_dist = space_right_up_corner[2] - space_left_down_corner[2]
             plt.xlim(space_left_down_corner[0] - wall_x_dist / 2, space_right_up_corner[0] + wall_x_dist / 2)
             plt.ylim(space_left_down_corner[1] - wall_y_dist / 2, space_right_up_corner[1] + wall_y_dist / 2)
-            # plt.zlim(space_left_down_corner[2] - wall_y_dist / 2, space_right_up_corner[2] + wall_z_dist / 2)
-            tools.paint_wall_by_2_corners(space_left_down_corner, space_right_up_corner)
-            # fig = plt.figure()
-            # ax = fig.add_subplot(111, projection = '3d')
-            # ax.scatter(points[0], points[1], points[2])
-            # ax.set_zlim(space_left_down_corner[2] - wall_y_dist / 2, space_right_up_corner[2] + wall_z_dist / 2)
 
-        # title
-        plt.title("FPS: %.2f, particle_num: %d, cur_time = %.2f" % ((1.0/(time.time() - t1 + 1e-6)), sim.get_particle_num(), sim.get_cur_time()))
-        t1 = time.time()
-        # print('[log][display] simulator cost %.3f s, display cost %.3f s' % ((t2 - t1), (t_last - t2)))
+            tools.paint_wall_by_2_corners_2d(space_left_down_corner, space_right_up_corner)
 
-        # pause
-        plt.pause(0.2)
-        # plt.savefig(img_save_dir + str(sim.get_frameid()))
-        plt.cla()
+            # title
+            plt.title("FPS: %.2f, particle_num: %d, cur_time = %.2f" % ((1.0/(time.time() - t1 + 1e-6)), sim.get_particle_num(), sim.get_cur_time()))
+            t1 = time.time()
+            # print('[log][display] simulator cost %.3f s, display cost %.3f s' % ((t2 - t1), (t_last - t2)))
+
+            # pause
+            if record_and_do_not_display == False:
+                plt.pause(1e-5)
+            else:
+                plt.savefig(img_save_dir + str(sim.get_frameid()))
+            plt.cla()

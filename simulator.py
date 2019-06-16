@@ -605,7 +605,7 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase):
             # velocity_diff_coef_vec = 2n * 1, flatten按列展开
             # (2i， 2i+1)数据对就是第i个点的x y速度差 * 对应系数
 
-            assert velocity_diff_coef_vec.shape == (self.particles_num * 2,)
+            assert velocity_diff_coef_vec.shape == (self.particles_num * self.simulator_base_dimension,)
 
             # compute the ∇^2_matrix
             pos_i = np.reshape(self.point_pos[:, id], (self.simulator_base_dimension, 1))
