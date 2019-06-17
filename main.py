@@ -16,8 +16,8 @@ if __name__ == '__main__':
     record_save_dir = "./record/"
 
     # simulator config
-    simulator_dimension = 2
-    particles_num = 1000
+    simulator_dimension = 3
+    particles_num = 3000
 
     # particles_num = int(particles_num ** 0.5) ** 2
     timestep = 0.005
@@ -56,6 +56,12 @@ if __name__ == '__main__':
     if  False == os.path.exists(record_save_dir):
         os.mkdir(record_save_dir)
 
+    # remove stastistic
+    statistic_path ="./log/stastistic.txt"
+    if os.path.exists(statistic_path):
+        os.remove(statistic_path)
+    with open(statistic_path, "w") as f:
+        f.write("********************\n")
     # 这里需要和下面保持一致
     space = 0
     if simulator_dimension == 2:

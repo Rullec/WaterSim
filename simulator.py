@@ -91,8 +91,9 @@ class ParticleWaterSimulatorBase:
     time_cost_collision_test = 0.0
 
     # emiiter
-    emmiter1 = None
-    emit_amount = None
+    # emmiter1 =
+    emit_amount = -1
+    emmitter_list = []
 
     # logging module
     logger = None
@@ -130,9 +131,9 @@ class ParticleWaterSimulatorBase:
         log_filename = "./log/" + str(time.strftime("%Y-%m-%d %H%M%S", time.localtime())) + str('.txt')
         logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(name)s  - %(message)s")
         fh = logging.FileHandler(filename=log_filename)  # ouput log both the the console and the file
-        logger = logging.getLogger(self.__class__.__name__)
-        logger.addHandler(fh)
-        logger.info('[SimulatorBase] Init begin')
+        # self.logger = logging.getLogger(self.__class__.__name__)
+        # self.logger.addHandler(fh)
+        # self.logger.info('[SimulatorBase] Init begin')
 
         # system property
         # x_num = int(particle_nums_ ** 0.5)
@@ -171,15 +172,18 @@ class ParticleWaterSimulatorBase:
 
         # init emitter
         if self.simulator_base_dimension ==  2:
-            self.emmiter1 = Emmiter(np.array([(self.space_left_down_corner[0]+self.space_right_up_corner[0])/2,
+            emmiter1 = Emmiter(np.array([(self.space_left_down_corner[0]+self.space_right_up_corner[0])/2,
                                               (self.space_left_down_corner[1]+self.space_right_up_corner[1])/2]), "circle")
+            self.emmitter_list.append(emmiter1)
+            self.emit_amount = 1
         elif self.simulator_base_dimension == 3:
             # self.emmiter1 = Emmiter(np.array([0, 0, 0]), "linear")
-            self.emmiter1 = Emmiter(np.array([(self.space_left_down_corner[0] + self.space_right_up_corner[0]) / 2,
+            emmiter1 = Emmiter(np.array([(self.space_left_down_corner[0] + self.space_right_up_corner[0]) / 2,
                                               (self.space_left_down_corner[1] + self.space_right_up_corner[1]) / 2,
                                               (self.space_left_down_corner[2] + self.space_right_up_corner[2]) / 2],
                                              ), "circle")
-        self.emit_amount = 1
+            self.emmitter_list.append(emmiter1)
+            self.emit_amount = 1
 
         # MP computation setting
         # if self.particles_num > 1300:
@@ -193,7 +197,7 @@ class ParticleWaterSimulatorBase:
         #     self.space_right_up_corner[1]))
 
         # print('******************Simulator Init Succ****************')
-        logger.info('[SimulatorBase] Init succ')
+        # self.logger.info('[SimulatorBase] Init succ')
         return
 
     def init_points_variables(self, space_left_down_corner_, space_right_up_corner_):
@@ -414,13 +418,17 @@ class ParticleWaterSimulatorBase:
     def emitter_inject(self):
         if np.random.rand() > 0.8:
             return
-        self.particles_num += self.emit_amount
-        pos, vel, acc, mass = self.emmiter1.blow(self.emit_amount)
+        if self.emit_amount <=0: # there is no emitter
+            return
 
-        self.point_pos = np.concatenate((self.point_pos, pos), axis=1)
-        self.point_vel = np.concatenate((self.point_vel, vel), axis=1)
-        self.point_acc = np.concatenate((self.point_acc, acc), axis=1)
-        self.point_mass = np.append(self.point_mass, mass)
+        for cur_emiter in self.emmitter_list:
+            self.particles_num += self.emit_amount
+            pos, vel, acc, mass = cur_emiter.blow(self.emit_amount)
+
+            self.point_pos = np.concatenate((self.point_pos, pos), axis=1)
+            self.point_vel = np.concatenate((self.point_vel, vel), axis=1)
+            self.point_acc = np.concatenate((self.point_acc, acc), axis=1)
+            self.point_mass = np.append(self.point_mass, mass)
 
         # you must update the division info after add or diminish some vertex
         self.update_multipleprocessor_infolist()
@@ -639,11 +647,18 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase):
 
         ed = time.time()
         time_total = ed - st + 1e-6
-        print("compute force cost time (%.3f) s, collision %.3f s(%.3f%%), pressure %.3f s(%.3f%%), viscosity %.3f s(%.3f%%), point_density %.3f s(%.3f%%) , point pressure %.3fs(%.3f%%)."
-                         % (time_total, time_collision, time_collision/time_total * 100,
+        # self.logger.info("compute force cost time (%.3f) s, collision %.3f s(%.3f%%), pressure %.3f s(%.3f%%), viscosity %.3f s(%.3f%%), point_density %.3f s(%.3f%%) , point pressure %.3fs(%.3f%%)."
+        #                  % (time_total, time_collision, time_collision/time_total * 100,
+        #                     time_compute_pressure, time_compute_pressure/time_total * 100,
+        #                     time_viscosity, time_viscosity/time_total * 100,
+        #                     time_compute_density, time_compute_density/time_total * 100, time_compute_point_pressure, time_compute_point_pressure/time_total * 100))
+        with open("./log/stastistic.txt", "a") as f:
+            str = "particle num = %d, compute force cost time (%.3f) s, collision %.3f s(%.3f%%), pressure %.3f s(%.3f%%), viscosity %.3f s(%.3f%%), point_density %.3f s(%.3f%%) , point pressure %.3fs(%.3f%%)." % (self.particles_num, time_total, time_collision, time_collision/time_total * 100,
                             time_compute_pressure, time_compute_pressure/time_total * 100,
                             time_viscosity, time_viscosity/time_total * 100,
-                            time_compute_density, time_compute_density/time_total * 100, time_compute_point_pressure, time_compute_point_pressure/time_total * 100))
+                            time_compute_density, time_compute_density/time_total * 100, time_compute_point_pressure, time_compute_point_pressure/time_total * 100)
+            print(str)
+            f.write(str + "\n")
         return sum_force
 
     def compute_sub_viscosity_force(self, para):
