@@ -21,12 +21,13 @@ class Emmiter:
     emit_mode = None
     emit_point_mass = 1
     emit_base_dimentsion = -1
+    emit_total_num = 0
 
-    def __init__(self, emit_pos_):
+    def __init__(self, emit_pos_, emit_mode_):
         assert emit_pos_.shape == (2, ) or emit_pos_.shape == (3, )
         self.emit_base_dimentsion = emit_pos_.shape[0]
         self.emit_pos = emit_pos_
-        self.emit_mode = "linear"
+        self.emit_mode = emit_mode_
 
     def blow(self, point_num):
         point_pos = np.reshape(self.emit_pos, (self.emit_base_dimentsion, 1)).repeat(point_num, axis = 1)
@@ -38,7 +39,17 @@ class Emmiter:
             point_vel = np.reshape(single_vel, (self.emit_base_dimentsion, 1)).repeat(point_num, axis = 1)
             point_acc = np.zeros([self.emit_base_dimentsion, point_num])
             point_mass = np.ones(point_num) * self.emit_point_mass
-
+        if "circle" == self.emit_mode:
+            single_vel = None
+            rotate_factor = 5
+            if self.emit_base_dimentsion == 2:
+                single_vel = 10 * np.array([np.cos(rotate_factor * self.emit_total_num / 180 * np.pi), np.sin(rotate_factor * self.emit_total_num/180 * np.pi) ])
+            elif self.emit_base_dimentsion == 3:
+                single_vel = 10 * np.array([np.cos(rotate_factor * self.emit_total_num / 180 * np.pi), np.sin(rotate_factor * self.emit_total_num / 180 * np.pi), 0])
+            point_vel = np.reshape(single_vel, (self.emit_base_dimentsion, 1)).repeat(point_num, axis=1)
+            point_acc = np.zeros([self.emit_base_dimentsion, point_num])
+            point_mass = np.ones(point_num) * self.emit_point_mass
+        self.emit_total_num += point_num
         return point_pos, point_vel, point_acc, point_mass
 
 class ParticleWaterSimulatorBase:
@@ -160,15 +171,20 @@ class ParticleWaterSimulatorBase:
 
         # init emitter
         if self.simulator_base_dimension ==  2:
-            self.emmiter1 = Emmiter(np.array([0, 0]))
+            self.emmiter1 = Emmiter(np.array([(self.space_left_down_corner[0]+self.space_right_up_corner[0])/2,
+                                              (self.space_left_down_corner[1]+self.space_right_up_corner[1])/2]), "circle")
         elif self.simulator_base_dimension == 3:
-            self.emmiter1 = Emmiter(np.array([0, 0, 0]))
+            # self.emmiter1 = Emmiter(np.array([0, 0, 0]), "linear")
+            self.emmiter1 = Emmiter(np.array([(self.space_left_down_corner[0] + self.space_right_up_corner[0]) / 2,
+                                              (self.space_left_down_corner[1] + self.space_right_up_corner[1]) / 2,
+                                              (self.space_left_down_corner[2] + self.space_right_up_corner[2]) / 2],
+                                             ), "circle")
         self.emit_amount = 1
 
         # MP computation setting
         # if self.particles_num > 1300:
         self.MULTIPLEPROCESS = multi_processor_
-        self.multipleprocess_num = max(int((self.particles_num / 5000) * multiprocessing.cpu_count()), 4)
+        self.multipleprocess_num = max(int(min((self.particles_num / 5000),1) * multiprocessing.cpu_count()), 4)
 
         # print('particle_num = %d' % self.particles_num)
         # print('timestep = %d' % self.timestep)
@@ -180,7 +196,7 @@ class ParticleWaterSimulatorBase:
         logger.info('[SimulatorBase] Init succ')
         return
 
-    def init_points_variables(self, space_right_up_corner_, space_left_down_corner_):
+    def init_points_variables(self, space_left_down_corner_, space_right_up_corner_):
         # init these points
         if self.simulator_base_dimension == 2:
             self.space_length = space_right_up_corner_[0] - space_left_down_corner_[0]
@@ -198,7 +214,7 @@ class ParticleWaterSimulatorBase:
             self.point_pos[1, :] = self.space_height / 2 * np.random.rand( self.particles_num) + space_left_down_corner_[
                 1] + self.space_height / 4
             self.point_pos[2, :] = self.space_width / 2 * np.random.rand(self.particles_num) + space_left_down_corner_[
-                1] + self.space_width / 10
+                2] + self.space_width / 100
         else:
             raise("the dimension is illegal")
 
@@ -365,9 +381,8 @@ class ParticleWaterSimulatorBase:
         :return:
         '''
         # judge whether to use MP or not
-        # if self.particles_num > 1300:
-        #     self.MULTIPLEPROCESS = True
-        #     self.multipleprocess_num = multiprocessing.cpu_count()
+        if self.particles_num * self.simulator_base_dimension> 2000:
+            self.MULTIPLEPROCESS = True
 
         # update the particle num division
         self.multipleprocess_infolist = []
@@ -397,6 +412,8 @@ class ParticleWaterSimulatorBase:
             f.write("\n")
 
     def emitter_inject(self):
+        if np.random.rand() > 0.8:
+            return
         self.particles_num += self.emit_amount
         pos, vel, acc, mass = self.emmiter1.blow(self.emit_amount)
 
@@ -614,6 +631,7 @@ class ParticleWaterSimulatorSPH(ParticleWaterSimulatorBase):
 
         # 1.6 summary
         sum_force += pressure_force
+        print(np.linalg.norm(pressure_force[0]))
         sum_force += viscosity_force
         sum_force += gravity
         sum_force += collision_force

@@ -8,28 +8,30 @@ import shutil
 
 if __name__ == '__main__':
     # display mode or record mode
-    record_and_do_not_display = False
+    record = True
+    display = False
 
     # render config
     img_save_dir = "./imgs/"
     record_save_dir = "./record/"
 
     # simulator config
-    simulator_dimension = 3
-    particles_num = 30
+    simulator_dimension = 2
+    particles_num = 1000
 
     # particles_num = int(particles_num ** 0.5) ** 2
-    timestep = 0.003
+    timestep = 0.005
     gravity = 9.8
     space_left_down_corner = None
     space_right_up_corner = None
+    cube_edge = 30.0
 
     if simulator_dimension == 2:
         space_left_down_corner = (0.0, 0.0)
-        space_right_up_corner = (100.0, 100.0)
+        space_right_up_corner = (cube_edge, cube_edge)
     elif simulator_dimension == 3:
         space_left_down_corner = (0.0, 0.0, 0.0)
-        space_right_up_corner = (100.0, 100.0, 100.0)
+        space_right_up_corner = (cube_edge, cube_edge, cube_edge)
     else:
         assert 0 == 1
 
@@ -60,8 +62,10 @@ if __name__ == '__main__':
         space = (space_right_up_corner[0] - space_left_down_corner[0]) * (space_right_up_corner[1] - space_left_down_corner[1]) / 4
     elif simulator_dimension == 3:
         space = (space_right_up_corner[0] - space_left_down_corner[0]) * (space_right_up_corner[1] - space_left_down_corner[1]) * (space_right_up_corner[2] - space_left_down_corner[2])
-    d = max((( space / particles_num) / 3.14)**0.5, 1)
-
+    d = 2.5
+    # d = max((( space / particles_num) / 3.14)**0.5, 1)
+    # d = (( space / particles_num) / 3.14)**0.5
+    print(d)
     # sim = ParticleWaterSimulatorBase(
     #     simulator_base_dimension_ = simulator_dimension,
     #     particle_nums_ = particles_num,
@@ -86,7 +90,7 @@ if __name__ == '__main__':
         record_save_dir_ = record_save_dir,
         multi_processor_ = multi_processor)
 
-    if record_and_do_not_display == False:
+    if display == True:
         plt.ion()
     t1 = time.time()
     if simulator_dimension == 3:
@@ -94,26 +98,30 @@ if __name__ == '__main__':
         ax = Axes3D(fig)  # fig.add_subplot(111, projection = '3d')
         while True:
             points = sim.dotimestep()
+
             wall_x_dist = space_right_up_corner[0] - space_left_down_corner[0]
             wall_y_dist = space_right_up_corner[1] - space_left_down_corner[1]
             wall_z_dist = space_right_up_corner[2] - space_left_down_corner[2]
 
+            # paint the wall
+            tools.paint_wall_by_2_corners_3d(ax, space_left_down_corner, space_right_up_corner)
+
             ax.scatter(points[0], points[1], points[2])
-            ax.set_xlim(space_left_down_corner[0] - wall_x_dist / 2, space_right_up_corner[0] + wall_x_dist / 2)
-            ax.set_ylim(space_left_down_corner[1] - wall_y_dist / 2, space_right_up_corner[1] + wall_y_dist / 2)
-            ax.set_zlim(space_left_down_corner[2] - wall_y_dist / 2, space_right_up_corner[2] + wall_z_dist / 2)
+            ax.set_xlim(space_left_down_corner[0] - wall_x_dist / 4, space_right_up_corner[0] + wall_x_dist / 4)
+            ax.set_ylim(space_left_down_corner[1] - wall_y_dist / 4, space_right_up_corner[1] + wall_y_dist / 4)
+            ax.set_zlim(space_left_down_corner[2] - wall_y_dist / 4, space_right_up_corner[2] + wall_z_dist / 4)
 
             ax.set_xlabel('X')
             ax.set_ylabel('Y')
             ax.set_zlabel('Z')
             # ax.set_title("123")
             ax.set_title("FPS: %.2f, particle_num: %d, cur_time = %.2f"% ((1.0 / (time.time() - t1 + 1e-6)), sim.get_particle_num(), sim.get_cur_time()))
-            tools.paint_wall_by_2_corners_3d(ax, space_left_down_corner, space_right_up_corner)
+
             # ax.set_title("FPS: ")# % ((1.0 / (time.time() - t1 + 1e-6)), sim.get_particle_num(), sim.get_cur_time()))
             t1 = time.time()
-            if record_and_do_not_display == False:
+            if display == True:
                 plt.pause(1e-5)
-            else:
+            if record == True:
                 plt.savefig(img_save_dir + str(sim.get_frameid()))
 
             ax.cla()
@@ -137,8 +145,8 @@ if __name__ == '__main__':
             # print('[log][display] simulator cost %.3f s, display cost %.3f s' % ((t2 - t1), (t_last - t2)))
 
             # pause
-            if record_and_do_not_display == False:
+            if display == True:
                 plt.pause(1e-5)
-            else:
+            if record == True:
                 plt.savefig(img_save_dir + str(sim.get_frameid()))
             plt.cla()
