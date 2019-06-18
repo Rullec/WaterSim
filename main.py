@@ -20,7 +20,7 @@ if __name__ == '__main__':
     particles_num = 3000
 
     # particles_num = int(particles_num ** 0.5) ** 2
-    timestep = 0.005
+    timestep = 0.002
     gravity = 9.8
     space_left_down_corner = None
     space_right_up_corner = None
@@ -121,7 +121,7 @@ if __name__ == '__main__':
             ax.set_ylabel('Y')
             ax.set_zlabel('Z')
             # ax.set_title("123")
-            ax.set_title("FPS: %.2f, particle_num: %d, cur_time = %.2f"% ((1.0 / (time.time() - t1 + 1e-6)), sim.get_particle_num(), sim.get_cur_time()))
+            ax.set_title("FPS: %.2f, particle_num: %d, cur_time = %.3f"% ((1.0 / (time.time() - t1 + 1e-6)), sim.get_particle_num(), sim.get_cur_time()))
 
             # ax.set_title("FPS: ")# % ((1.0 / (time.time() - t1 + 1e-6)), sim.get_particle_num(), sim.get_cur_time()))
             t1 = time.time()
@@ -146,7 +146,7 @@ if __name__ == '__main__':
             tools.paint_wall_by_2_corners_2d(space_left_down_corner, space_right_up_corner)
 
             # title
-            plt.title("FPS: %.2f, particle_num: %d, cur_time = %.2f" % ((1.0/(time.time() - t1 + 1e-6)), sim.get_particle_num(), sim.get_cur_time()))
+            plt.title("FPS: %.2f, particle_num: %d, cur_time = %.3f" % ((1.0/(time.time() - t1 + 1e-6)), sim.get_particle_num(), sim.get_cur_time()))
             t1 = time.time()
             # print('[log][display] simulator cost %.3f s, display cost %.3f s' % ((t2 - t1), (t_last - t2)))
 

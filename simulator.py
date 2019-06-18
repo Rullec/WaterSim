@@ -188,7 +188,7 @@ class ParticleWaterSimulatorBase:
         # MP computation setting
         # if self.particles_num > 1300:
         self.MULTIPLEPROCESS = multi_processor_
-        self.multipleprocess_num = max(int(min((self.particles_num / 5000),1) * multiprocessing.cpu_count()), 4)
+        self.multipleprocess_num = int(min(self.particles_num / 5000, 1) * multiprocessing.cpu_count())
 
         # print('particle_num = %d' % self.particles_num)
         # print('timestep = %d' % self.timestep)
@@ -218,7 +218,7 @@ class ParticleWaterSimulatorBase:
             self.point_pos[1, :] = self.space_height / 2 * np.random.rand( self.particles_num) + space_left_down_corner_[
                 1] + self.space_height / 4
             self.point_pos[2, :] = self.space_width / 2 * np.random.rand(self.particles_num) + space_left_down_corner_[
-                2] + self.space_width / 100
+                2] + self.space_width / 4
         else:
             raise("the dimension is illegal")
 
@@ -416,8 +416,6 @@ class ParticleWaterSimulatorBase:
             f.write("\n")
 
     def emitter_inject(self):
-        if np.random.rand() > 0.8:
-            return
         if self.emit_amount <=0: # there is no emitter
             return
 
